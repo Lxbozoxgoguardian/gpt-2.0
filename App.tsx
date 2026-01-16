@@ -30,34 +30,35 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // File currently being EDITED
+  // File currently being EDITED (The focused tab in Editor)
   const editingFile = useMemo(() => {
     const selected = files.find(f => f.id === selectedFileId);
     if (selected) return selected;
     if (files.length === 0) return null;
     
+    // Default fallback editor file
     return files.find(f => f.path === 'index.html') 
            || files.find(f => f.path.startsWith('index.'))
            || files[0];
   }, [files, selectedFileId]);
 
-  // File currently being PREVIEWED (Always try to find an HTML file)
+  // File currently being PREVIEWED (Always tries to stay on the main entry point)
   const previewFile = useMemo(() => {
     if (files.length === 0) return null;
     
-    // 1. Try index.html
+    // 1. Strict priority for index.html
     const indexHtml = files.find(f => f.path === 'index.html');
     if (indexHtml) return indexHtml;
 
-    // 2. Try any other HTML file
+    // 2. Secondary priority for any HTML file
     const anyHtml = files.find(f => f.path.endsWith('.html'));
     if (anyHtml) return anyHtml;
 
-    // 3. Try SVG or MD
+    // 3. Tertiary for visual components (SVG, MD)
     const visual = files.find(f => f.path.endsWith('.svg') || f.path.endsWith('.md'));
     if (visual) return visual;
 
-    // 4. Fallback to editing file
+    // 4. Final fallback to whatever is being edited (even if it's CSS/JS)
     return editingFile;
   }, [files, editingFile]);
 
@@ -133,7 +134,7 @@ const App: React.FC = () => {
       setMessages(prev => 
         prev.map(msg => 
           msg.id === assistantMsgId 
-            ? { ...msg, content: "⚠️ Error processing request." } 
+            ? { ...msg, content: "⚠️ Request failed. Make sure your API key is configured." } 
             : msg
         )
       );
@@ -193,6 +194,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
+        {/* Global Tab Switcher */}
         <div className="flex-1 flex justify-center h-full items-center">
           <div className="flex items-center bg-slate-950/80 rounded-xl p-1 border border-slate-800 h-10 w-full max-w-md shadow-inner">
             <button 
@@ -258,7 +260,7 @@ const App: React.FC = () => {
                   <Sparkles size={40} className="text-blue-500 mb-6 opacity-30 animate-pulse" />
                   <h2 className="text-lg font-bold mb-2">Architect Mode</h2>
                   <p className="text-xs text-slate-500 max-w-[240px] leading-relaxed">
-                    Tell me what to build. I'll scaffold the files and maintain your live preview.
+                    Build professional apps. I'll maintain your index.html and preview your code instantly.
                   </p>
                 </div>
               ) : (

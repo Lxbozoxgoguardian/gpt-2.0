@@ -12,13 +12,21 @@ Rules for Output:
    content
    \`\`\`
 
-2. IMPORTANT: For any web UI request, you MUST always include or update an 'index.html' file. 
-3. PREVIEW LOGIC: The preview environment renders 'index.html'. If you create 'style.css' or 'script.js', you MUST link them in 'index.html' using relative paths:
-   - <link rel="stylesheet" href="style.css">
-   - <script src="script.js"></script>
-4. Focus on production-ready, modular, and typed code.
-5. You can provide multiple file blocks. Explain architectural decisions briefly.
-6. Assume a modern React/Tailwind/Vite environment unless specified. Use CDN links for external libraries in HTML if needed.`;
+2. FILE EXTENSIONS: 
+   - Use '.html' for page structure.
+   - Use '.css' for styling.
+   - Use '.js' or '.ts' for logic.
+   - Use '.tsx' ONLY for React components.
+
+3. PREVIEW MANDATE: 
+   - Every project MUST have an 'index.html'. If it is missing, CREATE IT.
+   - You MUST link styles and scripts in 'index.html' using:
+     <link rel="stylesheet" href="style.css">
+     <script src="script.js"></script>
+   - Do not use 'index.tsx' as the link in 'index.html' directly; use '.js' or '.ts' for the main logic file you generate for the user's project.
+
+4. FOCUS: Professional, clean, and production-ready code. Briefly explain your work.
+5. Use Tailwind CDN or external assets in 'index.html' if requested.`;
 
 export class GeminiService {
   private ai: GoogleGenAI;
