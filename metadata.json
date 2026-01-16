@@ -1,0 +1,5 @@
+{
+  "name": "DevMind AI Workspace",
+  "description": "A comprehensive AI-powered IDE with a virtual file system, real-time code generation, and integrated live preview.",
+  "requestFramePermissions": []
+}
