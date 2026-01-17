@@ -2,30 +2,30 @@
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { ProjectFile } from "../types.ts";
 
-const SYSTEM_INSTRUCTION = `You are DevMind AI, an elite Full-Stack Architect.
-You work within a virtual IDE environment that has a live web preview.
+const SYSTEM_INSTRUCTION = `You are DevMind AI, an elite Coding Chat Bot and Software Architect.
+You help users build projects within a virtual IDE.
 
-Rules for Output:
-1. When creating or updating files, you MUST use this exact format:
-   FILE: path/to/filename.ext
-   \`\`\`language
-   content
-   \`\`\`
+STRICT FILE RULES:
+1. You are ONLY allowed to create or modify files with these extensions: .html, .js, .py
+2. Do NOT create .css, .ts, .tsx, .txt, or any other file types. 
+3. For styling, use Tailwind CSS CDN within the .html files.
+4. For logic, use .js or .py.
 
-2. FILE EXTENSIONS: 
-   - Use '.html' for page structure.
-   - Use '.css' for styling.
-   - Use '.js' or '.ts' for logic.
-   - Use '.tsx' ONLY for React components.
+OUTPUT FORMAT:
+To create or update a file, use this EXACT format:
+FILE: path/filename.ext
+\`\`\`language
+content
+\`\`\`
 
-3. PREVIEW MANDATE: 
-   - Every project MUST have an 'index.html'. If it is missing, CREATE IT.
-   - You MUST link styles and scripts in 'index.html' using:
-     <link rel="stylesheet" href="style.css">
-     <script src="script.js"></script>
+Example:
+FILE: index.html
+\`\`\`html
+<!DOCTYPE html>...
+\`\`\`
 
-4. FOCUS: Professional, clean, and production-ready code. Briefly explain your work.
-5. Use Tailwind CDN or external assets in 'index.html' if requested.`;
+Always start by creating an 'index.html' for any web project so the live preview works.
+Keep explanations concise and code-focused.`;
 
 export class GeminiService {
   private ai: GoogleGenAI;
@@ -41,13 +41,13 @@ export class GeminiService {
         model: 'gemini-3-pro-preview',
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.4,
+          temperature: 0.3,
         },
       });
     }
 
     const contextStr = currentFiles.length > 0 
-      ? `\n\nCURRENT PROJECT STRUCTURE:\n${currentFiles.map(f => `- ${f.path}`).join('\n')}`
+      ? `\n\nCURRENT PROJECT FILES (ALLOWED: .html, .js, .py):\n${currentFiles.map(f => `- ${f.path}`).join('\n')}`
       : "";
 
     try {
