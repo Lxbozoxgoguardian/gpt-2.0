@@ -3,8 +3,8 @@ import React from 'react';
 import { User, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import CodeBlock from './CodeBlock';
-import { Message } from '../types';
+import CodeBlock from './CodeBlock.tsx';
+import { Message } from '../types.ts';
 
 interface ChatMessageProps {
   message: Message;

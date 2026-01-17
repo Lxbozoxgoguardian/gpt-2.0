@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
-import { ProjectFile } from "../types";
+import { ProjectFile } from "../types.ts";
 
 const SYSTEM_INSTRUCTION = `You are DevMind AI, an elite Full-Stack Architect.
 You work within a virtual IDE environment that has a live web preview.
@@ -23,7 +23,6 @@ Rules for Output:
    - You MUST link styles and scripts in 'index.html' using:
      <link rel="stylesheet" href="style.css">
      <script src="script.js"></script>
-   - Do not use 'index.tsx' as the link in 'index.html' directly; use '.js' or '.ts' for the main logic file you generate for the user's project.
 
 4. FOCUS: Professional, clean, and production-ready code. Briefly explain your work.
 5. Use Tailwind CDN or external assets in 'index.html' if requested.`;

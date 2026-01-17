@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ProjectFile } from '../types';
+import { ProjectFile } from '../types.ts';
 import { 
   RotateCcw, Globe, Layout, ExternalLink, FileCode
 } from 'lucide-react';
@@ -65,11 +65,11 @@ const WorkspaceEditor: React.FC<WorkspaceEditorProps> = ({
   if (!editingFile) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-700 p-8 text-center">
-        <div className="p-6 rounded-full bg-slate-900 mb-6">
-          <Layout size={48} className="opacity-20" />
+        <div className="p-6 rounded-full bg-slate-900 mb-6 shadow-xl">
+          <Layout size={48} className="opacity-10" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-500">Workspace Empty</h3>
-        <p className="text-xs mt-2 max-w-xs text-slate-600 font-medium italic">"Hey DevMind, build me a login page..."</p>
+        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-600">Workspace Empty</h3>
+        <p className="text-[10px] mt-2 max-w-xs text-slate-700 font-medium italic">Describe your idea to start coding.</p>
       </div>
     );
   }
@@ -135,9 +135,9 @@ const WorkspaceEditor: React.FC<WorkspaceEditorProps> = ({
             {!isPreviewable ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-8 text-center">
                 <ExternalLink size={32} className="mb-4 opacity-10" />
-                <p className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Preview unavailable</p>
-                <p className="text-[10px] mt-2 max-w-[240px] text-slate-400">
-                  The AI hasn't generated an HTML entry point yet. Ask it to "Create index.html" to enable the live preview.
+                <p className="text-sm font-bold text-slate-500 uppercase tracking-tighter text-center">Preview unavailable</p>
+                <p className="text-[10px] mt-2 max-w-[240px] text-slate-400 text-center">
+                  Create an index.html file to view your project in the live preview.
                 </p>
               </div>
             ) : (
