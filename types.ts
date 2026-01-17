@@ -16,6 +16,14 @@ export interface ProjectFile {
   isOpen?: boolean;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  files: ProjectFile[];
+  messages: Message[];
+  lastModified: number;
+}
+
 export interface ProjectState {
   files: ProjectFile[];
   selectedFileId: string | null;

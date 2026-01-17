@@ -2,16 +2,49 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Trash2, Github, Terminal as TerminalIcon, 
-  Sparkles, Menu, X, Code, Eye, Maximize2, Minimize2
+  Sparkles, Menu, X, Code, Eye, Maximize2, Minimize2,
+  ChevronDown, FolderKanban, Plus, Check, Edit3
 } from 'lucide-react';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import FileExplorer from './components/FileExplorer';
 import WorkspaceEditor from './components/WorkspaceEditor';
 import { geminiService } from './services/geminiService';
-import { Message, ProjectFile } from './types';
+import { Message, ProjectFile, Project } from './types';
+
+const STORAGE_KEY = 'devmind_projects_v1';
 
 const App: React.FC = () => {
+  // --- PERSISTENCE & INITIALIZATION ---
+  const loadProjects = (): Project[] => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        return parsed.map((p: any) => ({
+          ...p,
+          messages: p.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+        }));
+      } catch (e) {
+        console.error("Failed to load projects", e);
+      }
+    }
+    return [{
+      id: 'default',
+      name: 'Untitled Project',
+      files: [],
+      messages: [],
+      lastModified: Date.now()
+    }];
+  };
+
+  const [projects, setProjects] = useState<Project[]>(loadProjects());
+  const [activeProjectId, setActiveProjectId] = useState<string>(projects[0].id);
+  const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [tempProjectName, setTempProjectName] = useState('');
+
+  // --- WORKSPACE STATE ---
   const [messages, setMessages] = useState<Message[]>([]);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -22,6 +55,85 @@ const App: React.FC = () => {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // --- SYNC WORKSPACE WITH ACTIVE PROJECT ---
+  useEffect(() => {
+    const project = projects.find(p => p.id === activeProjectId);
+    if (project) {
+      setMessages(project.messages);
+      setFiles(project.files);
+      setSelectedFileId(null);
+      geminiService.resetSession();
+    }
+  }, [activeProjectId]);
+
+  // --- AUTO-SAVE TO LOCAL STORAGE ---
+  useEffect(() => {
+    const updatedProjects = projects.map(p => {
+      if (p.id === activeProjectId) {
+        return { ...p, files, messages, lastModified: Date.now() };
+      }
+      return p;
+    });
+    
+    // Check if substantial state changed to avoid unnecessary saves
+    const activeP = projects.find(p => p.id === activeProjectId);
+    if (activeP && (activeP.files !== files || activeP.messages !== messages)) {
+      const sorted = [...updatedProjects].sort((a, b) => b.lastModified - a.lastModified);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+      setProjects(sorted);
+    }
+  }, [files, messages, activeProjectId]);
+
+  // --- PROJECT ACTIONS ---
+  const createNewProject = () => {
+    const newProject: Project = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: 'Untitled Project',
+      files: [],
+      messages: [],
+      lastModified: Date.now()
+    };
+    const newProjectList = [newProject, ...projects];
+    setProjects(newProjectList);
+    setActiveProjectId(newProject.id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjectList));
+    setIsProjectMenuOpen(false);
+  };
+
+  const deleteProject = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (projects.length === 1) {
+      // Just clear the project if it's the last one
+      setFiles([]);
+      setMessages([]);
+      setProjects([{ ...projects[0], name: 'Untitled Project', files: [], messages: [], lastModified: Date.now() }]);
+      return;
+    }
+    
+    const newProjects = projects.filter(p => p.id !== id);
+    setProjects(newProjects);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
+    
+    if (activeProjectId === id) {
+      setActiveProjectId(newProjects[0].id);
+    }
+  };
+
+  const startRenaming = (e: React.MouseEvent, p: Project) => {
+    e.stopPropagation();
+    setEditingProjectId(p.id);
+    setTempProjectName(p.name);
+  };
+
+  const saveProjectName = (id: string) => {
+    if (tempProjectName.trim()) {
+      const updated = projects.map(p => p.id === id ? { ...p, name: tempProjectName.trim() } : p);
+      setProjects(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    }
+    setEditingProjectId(null);
+  };
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -30,38 +142,28 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // File currently being EDITED (The focused tab in Editor)
+  // --- DERIVED STATE ---
   const editingFile = useMemo(() => {
     const selected = files.find(f => f.id === selectedFileId);
     if (selected) return selected;
     if (files.length === 0) return null;
-    
-    // Default fallback editor file
     return files.find(f => f.path === 'index.html') 
            || files.find(f => f.path.startsWith('index.'))
            || files[0];
   }, [files, selectedFileId]);
 
-  // File currently being PREVIEWED (Always tries to stay on the main entry point)
   const previewFile = useMemo(() => {
     if (files.length === 0) return null;
-    
-    // 1. Strict priority for index.html
     const indexHtml = files.find(f => f.path === 'index.html');
     if (indexHtml) return indexHtml;
-
-    // 2. Secondary priority for any HTML file
     const anyHtml = files.find(f => f.path.endsWith('.html'));
     if (anyHtml) return anyHtml;
-
-    // 3. Tertiary for visual components (SVG, MD)
     const visual = files.find(f => f.path.endsWith('.svg') || f.path.endsWith('.md'));
     if (visual) return visual;
-
-    // 4. Final fallback to whatever is being edited (even if it's CSS/JS)
     return editingFile;
   }, [files, editingFile]);
 
+  // --- MESSAGE HANDLING ---
   const parseFilesFromResponse = (text: string) => {
     const fileRegex = /FILE:\s*([^\n]+)\n\s*```(\w+)?\n([\s\S]*?)```/g;
     let match;
@@ -88,56 +190,36 @@ const App: React.FC = () => {
       foundAny = true;
     }
 
-    if (foundAny) {
-      setFiles(newFiles);
-    }
+    if (foundAny) setFiles(newFiles);
   };
 
   const handleSend = async (content: string) => {
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content,
-      timestamp: new Date(),
-    };
+    if (messages.length === 0 && projects.find(p => p.id === activeProjectId)?.name === 'Untitled Project') {
+      const shortName = content.slice(0, 24) + (content.length > 24 ? '...' : '');
+      const updated = projects.map(p => p.id === activeProjectId ? { ...p, name: shortName } : p);
+      setProjects(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    }
 
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
     const assistantMsgId = (Date.now() + 1).toString();
-    const assistantMsg: Message = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-    };
-
+    const assistantMsg: Message = { id: assistantMsgId, role: 'assistant', content: '', timestamp: new Date() };
     setMessages(prev => [...prev, assistantMsg]);
 
     try {
       let accumulatedResponse = '';
       const stream = geminiService.streamMessage(content, files);
-
       for await (const chunk of stream) {
         accumulatedResponse += chunk;
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantMsgId 
-              ? { ...msg, content: accumulatedResponse } 
-              : msg
-          )
-        );
+        setMessages(prev => prev.map(msg => msg.id === assistantMsgId ? { ...msg, content: accumulatedResponse } : msg));
         parseFilesFromResponse(accumulatedResponse);
       }
     } catch (error: any) {
       console.error(error);
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === assistantMsgId 
-            ? { ...msg, content: "⚠️ Request failed. Make sure your API key is configured." } 
-            : msg
-        )
-      );
+      setMessages(prev => prev.map(msg => msg.id === assistantMsgId ? { ...msg, content: "⚠️ Request failed. Check your API key." } : msg));
     } finally {
       setIsLoading(false);
     }
@@ -147,54 +229,113 @@ const App: React.FC = () => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, content } : f));
   };
 
-  const deleteFile = (id: string) => {
-    setFiles(prev => prev.filter(f => f.id !== id));
-    if (selectedFileId === id) setSelectedFileId(null);
-  };
-
-  const renameFile = (id: string, newPath: string) => {
-    setFiles(prev => prev.map(f => f.id === id ? { 
-      ...f, 
-      path: newPath, 
-      language: newPath.split('.').pop() || 'plaintext' 
-    } : f));
-  };
-
-  const createFile = (path: string) => {
-    const newFile: ProjectFile = {
-      id: Math.random().toString(36).substr(2, 9),
-      path,
-      content: '',
-      language: path.split('.').pop() || 'plaintext'
-    };
-    setFiles(prev => [...prev, newFile]);
-    setSelectedFileId(newFile.id);
-  };
-
-  const clearChat = () => {
-    setMessages([]);
-    setFiles([]);
-    setSelectedFileId(null);
-    geminiService.resetSession();
-  };
+  const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
       <header className="h-14 flex items-center justify-between px-4 bg-slate-900 border-b border-slate-800 z-50 shrink-0 shadow-lg">
-        <div className="flex items-center gap-4 min-w-[200px]">
+        <div className="flex items-center gap-4 min-w-[320px]">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 transition-all"
           >
             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
-          <div className="flex items-center gap-2">
-            <TerminalIcon size={18} className="text-blue-500" />
-            <h1 className="font-bold text-[10px] tracking-[0.2em] uppercase hidden lg:block text-slate-500">DevMind IDE</h1>
+          
+          <div className="h-6 w-px bg-slate-800 mx-1" />
+
+          {/* Project Switcher */}
+          <div className="relative">
+            <button 
+              onClick={() => setIsProjectMenuOpen(!isProjectMenuOpen)}
+              className="flex items-center gap-3 px-3 py-1.5 hover:bg-slate-800 rounded-lg transition-all group max-w-[280px]"
+            >
+              <div className="w-6 h-6 bg-blue-600/20 rounded flex items-center justify-center">
+                <FolderKanban size={14} className="text-blue-500" />
+              </div>
+              <div className="flex flex-col items-start min-w-0">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">Workspace</span>
+                <span className="text-xs font-semibold text-slate-300 truncate w-full">{activeProject.name}</span>
+              </div>
+              <ChevronDown size={14} className={`text-slate-500 transition-transform duration-200 ${isProjectMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isProjectMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsProjectMenuOpen(false)} />
+                <div className="absolute top-full left-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="p-2 border-b border-slate-800">
+                    <button 
+                      onClick={createNewProject}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-xs font-bold text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                    >
+                      <Plus size={16} />
+                      New Project
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto py-2">
+                    {projects.map(p => (
+                      <div 
+                        key={p.id}
+                        onClick={() => { if (!editingProjectId) { setActiveProjectId(p.id); setIsProjectMenuOpen(false); } }}
+                        className={`group flex items-center justify-between px-3 py-2.5 cursor-pointer transition-colors ${
+                          p.id === activeProjectId ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <FolderKanban size={14} className={p.id === activeProjectId ? 'text-blue-400' : 'text-slate-600'} />
+                          {editingProjectId === p.id ? (
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <input 
+                                autoFocus
+                                className="bg-slate-800 border border-blue-500 rounded px-1.5 py-0.5 text-xs text-white w-full focus:outline-none"
+                                value={tempProjectName}
+                                onChange={(e) => setTempProjectName(e.target.value)}
+                                onBlur={() => saveProjectName(p.id)}
+                                onKeyDown={(e) => e.key === 'Enter' && saveProjectName(p.id)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <Check size={14} className="text-emerald-500 shrink-0" />
+                            </div>
+                          ) : (
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-xs font-medium truncate">{p.name}</span>
+                              <span className="text-[9px] text-slate-600 uppercase tracking-tighter">
+                                Last used: {new Date(p.lastModified).toLocaleDateString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                          {!editingProjectId && (
+                            <>
+                              <button 
+                                onClick={(e) => startRenaming(e, p)}
+                                className="p-1.5 hover:text-blue-400 transition-colors"
+                                title="Rename"
+                              >
+                                <Edit3 size={12} />
+                              </button>
+                              <button 
+                                onClick={(e) => deleteProject(p.id, e)}
+                                className="p-1.5 hover:text-red-400 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Global Tab Switcher */}
         <div className="flex-1 flex justify-center h-full items-center">
           <div className="flex items-center bg-slate-950/80 rounded-xl p-1 border border-slate-800 h-10 w-full max-w-md shadow-inner">
             <button 
@@ -218,14 +359,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 min-w-[200px] justify-end">
-          <button 
-            onClick={clearChat}
-            className="p-2 text-slate-500 hover:text-red-400 transition-colors"
-            title="Clear All"
-          >
-            <Trash2 size={18} />
-          </button>
+        <div className="flex items-center gap-3 min-w-[320px] justify-end">
           <button 
             onClick={() => setIsZenMode(!isZenMode)}
             className={`p-2 transition-colors ${isZenMode ? 'text-blue-400' : 'text-slate-500 hover:text-white'}`}
@@ -246,9 +380,13 @@ const App: React.FC = () => {
             files={files}
             selectedFileId={selectedFileId}
             onSelect={setSelectedFileId}
-            onDelete={deleteFile}
-            onCreate={createFile}
-            onRename={renameFile}
+            onDelete={(id) => setFiles(f => f.filter(x => x.id !== id))}
+            onCreate={(path) => {
+              const nf: ProjectFile = { id: Math.random().toString(36).substr(2, 9), path, content: '', language: path.split('.').pop() || 'plaintext' };
+              setFiles([...files, nf]);
+              setSelectedFileId(nf.id);
+            }}
+            onRename={(id, path) => setFiles(prev => prev.map(f => f.id === id ? { ...f, path, language: path.split('.').pop() || 'plaintext' } : f))}
           />
         </div>
 
@@ -260,7 +398,7 @@ const App: React.FC = () => {
                   <Sparkles size={40} className="text-blue-500 mb-6 opacity-30 animate-pulse" />
                   <h2 className="text-lg font-bold mb-2">Architect Mode</h2>
                   <p className="text-xs text-slate-500 max-w-[240px] leading-relaxed">
-                    Build professional apps. I'll maintain your index.html and preview your code instantly.
+                    Local projects are auto-saved to your browser. You can rename or delete them from the workspace menu.
                   </p>
                 </div>
               ) : (
