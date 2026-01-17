@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { FileCode, Plus, Edit2, Trash2, Edit3 } from 'lucide-react';
-import { ProjectFile } from '../types';
+import { ProjectFile } from '../types.ts';
 
 interface FileExplorerProps {
   files: ProjectFile[];

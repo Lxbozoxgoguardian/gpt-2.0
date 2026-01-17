@@ -15,7 +15,15 @@ import { Message, ProjectFile, Project } from './types.ts';
 const STORAGE_KEY = 'devmind_projects_v1';
 
 const App: React.FC = () => {
-  // --- INITIALIZATION ---
+  // --- PERSISTENCE HELPERS ---
+  const saveToLocalStorage = (allProjects: Project[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(allProjects));
+    } catch (e) {
+      console.error("Failed to save to local storage", e);
+    }
+  };
+
   const loadProjects = (): Project[] => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -30,7 +38,7 @@ const App: React.FC = () => {
       }
     }
     return [{
-      id: 'default-id-' + Math.random().toString(36).substr(2, 4),
+      id: 'default-' + Math.random().toString(36).substr(2, 4),
       name: 'Untitled Project',
       files: [],
       messages: [],
@@ -38,13 +46,13 @@ const App: React.FC = () => {
     }];
   };
 
+  // --- STATE ---
   const [projects, setProjects] = useState<Project[]>(loadProjects());
   const [activeProjectId, setActiveProjectId] = useState<string>(projects[0].id);
   const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [tempProjectName, setTempProjectName] = useState('');
 
-  // --- WORKSPACE STATE (The current active view) ---
   const [messages, setMessages] = useState<Message[]>([]);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -55,44 +63,45 @@ const App: React.FC = () => {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // --- PROJECT SWITCHING ---
+  // --- PROJECT MANAGEMENT ---
+  
+  // 1. Initial workspace load on project change
   useEffect(() => {
-    const project = projects.find(p => p.id === activeProjectId);
-    if (project) {
-      setMessages(project.messages);
-      setFiles(project.files);
+    const current = projects.find(p => p.id === activeProjectId);
+    if (current) {
+      setMessages(current.messages);
+      setFiles(current.files);
       setSelectedFileId(null);
       geminiService.resetSession();
     }
   }, [activeProjectId]);
 
-  // --- AUTO-SAVE (Sync current workspace state back to projects array & LocalStorage) ---
+  // 2. Synchronize current workspace changes back to projects list and localStorage
   useEffect(() => {
     const activeP = projects.find(p => p.id === activeProjectId);
     if (!activeP) return;
 
-    // Only save if data actually changed
-    if (JSON.stringify(activeP.files) !== JSON.stringify(files) || 
-        JSON.stringify(activeP.messages) !== JSON.stringify(messages)) {
-      
+    const dataHasChanged = 
+      JSON.stringify(activeP.files) !== JSON.stringify(files) || 
+      JSON.stringify(activeP.messages) !== JSON.stringify(messages);
+
+    if (dataHasChanged) {
       const updatedProjects = projects.map(p => {
         if (p.id === activeProjectId) {
           return { ...p, files, messages, lastModified: Date.now() };
         }
         return p;
-      });
+      }).sort((a, b) => b.lastModified - a.lastModified);
 
-      // Keep projects sorted by lastModified
-      const sorted = [...updatedProjects].sort((a, b) => b.lastModified - a.lastModified);
-      setProjects(sorted);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+      setProjects(updatedProjects);
+      saveToLocalStorage(updatedProjects);
     }
   }, [files, messages, activeProjectId]);
 
-  // --- PROJECT ACTIONS ---
   const createNewProject = () => {
+    const newId = 'proj-' + Math.random().toString(36).substr(2, 9);
     const newProject: Project = {
-      id: 'proj-' + Math.random().toString(36).substr(2, 9),
+      id: newId,
       name: 'New Project',
       files: [],
       messages: [],
@@ -100,8 +109,8 @@ const App: React.FC = () => {
     };
     const newList = [newProject, ...projects];
     setProjects(newList);
-    setActiveProjectId(newProject.id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+    setActiveProjectId(newId);
+    saveToLocalStorage(newList);
     setIsProjectMenuOpen(false);
   };
 
@@ -109,10 +118,10 @@ const App: React.FC = () => {
     e.stopPropagation();
     let newList = projects.filter(p => p.id !== id);
     
-    // If we delete the last project, create a new empty one
     if (newList.length === 0) {
+      const fallbackId = 'default-' + Math.random().toString(36).substr(2, 4);
       newList = [{
-        id: 'default-' + Math.random().toString(36).substr(2, 4),
+        id: fallbackId,
         name: 'Untitled Project',
         files: [],
         messages: [],
@@ -121,7 +130,7 @@ const App: React.FC = () => {
     }
     
     setProjects(newList);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+    saveToLocalStorage(newList);
     
     if (activeProjectId === id) {
       setActiveProjectId(newList[0].id);
@@ -137,12 +146,14 @@ const App: React.FC = () => {
   const saveProjectName = (id: string) => {
     const trimmed = tempProjectName.trim();
     if (trimmed) {
-      const updated = projects.map(p => p.id === id ? { ...p, name: trimmed } : p);
+      const updated = projects.map(p => p.id === id ? { ...p, name: trimmed, lastModified: Date.now() } : p);
       setProjects(updated);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveToLocalStorage(updated);
     }
     setEditingProjectId(null);
   };
+
+  // --- ACTIONS ---
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -152,7 +163,6 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // --- DATA DERIVATION ---
   const editingFile = useMemo(() => {
     const selected = files.find(f => f.id === selectedFileId);
     if (selected) return selected;
@@ -170,11 +180,10 @@ const App: React.FC = () => {
            || editingFile;
   }, [files, editingFile]);
 
-  // --- MESSAGE STREAMING ---
   const parseFilesFromResponse = (text: string) => {
     const fileRegex = /FILE:\s*([^\n]+)\n\s*```(\w+)?\n([\s\S]*?)```/g;
     let match;
-    let updated = false;
+    let found = false;
     const newFiles = [...files];
 
     while ((match = fileRegex.exec(text)) !== null) {
@@ -191,14 +200,12 @@ const App: React.FC = () => {
           path, content, language
         });
       }
-      updated = true;
+      found = true;
     }
-
-    if (updated) setFiles(newFiles);
+    if (found) setFiles(newFiles);
   };
 
   const handleSend = async (content: string) => {
-    // If it's a first message in an untitled project, rename it based on prompt
     const currentP = projects.find(p => p.id === activeProjectId);
     if (messages.length === 0 && currentP?.name === 'New Project') {
       const autoName = content.slice(0, 24).trim() + (content.length > 24 ? '...' : '');
@@ -223,7 +230,7 @@ const App: React.FC = () => {
       }
     } catch (error: any) {
       console.error(error);
-      setMessages(prev => prev.map(msg => msg.id === assistantMsgId ? { ...msg, content: "⚠️ Error: Connection failed. Verify your environment API Key." } : msg));
+      setMessages(prev => prev.map(msg => msg.id === assistantMsgId ? { ...msg, content: "⚠️ Error: AI Connection Failed. Check your network or API Key settings." } : msg));
     } finally {
       setIsLoading(false);
     }
@@ -241,7 +248,7 @@ const App: React.FC = () => {
           
           <div className="h-6 w-px bg-slate-800 mx-1" />
 
-          {/* Project Selector Dropdown */}
+          {/* Project Switcher */}
           <div className="relative">
             <button 
               onClick={() => setIsProjectMenuOpen(!isProjectMenuOpen)}
@@ -251,7 +258,7 @@ const App: React.FC = () => {
                 <FolderKanban size={14} className="text-blue-500" />
               </div>
               <div className="flex flex-col items-start min-w-0">
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">Active Workspace</span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">Project Workspace</span>
                 <span className="text-xs font-semibold text-slate-300 truncate w-full">{activeProject.name}</span>
               </div>
               <ChevronDown size={14} className={`text-slate-500 transition-transform ${isProjectMenuOpen ? 'rotate-180' : ''}`} />
@@ -271,7 +278,7 @@ const App: React.FC = () => {
                       <div 
                         key={p.id}
                         onClick={() => { if (!editingProjectId) { setActiveProjectId(p.id); setIsProjectMenuOpen(false); } }}
-                        className={`group flex items-center justify-between px-3 py-2.5 cursor-pointer ${
+                        className={`group flex items-center justify-between px-3 py-2.5 cursor-pointer transition-colors ${
                           p.id === activeProjectId ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                         }`}
                       >
@@ -293,15 +300,15 @@ const App: React.FC = () => {
                           ) : (
                             <div className="flex flex-col min-w-0">
                               <span className="text-xs font-medium truncate">{p.name}</span>
-                              <span className="text-[8px] text-slate-600">MODIFIED: {new Date(p.lastModified).toLocaleDateString()}</span>
+                              <span className="text-[8px] text-slate-600 uppercase tracking-tighter">MODIFIED: {new Date(p.lastModified).toLocaleDateString()}</span>
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 ml-2">
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
                           {!editingProjectId && (
                             <>
-                              <button onClick={(e) => startRenaming(e, p)} className="p-1.5 hover:text-blue-400 transition-colors"><Edit3 size={12} /></button>
-                              <button onClick={(e) => deleteProject(p.id, e)} className="p-1.5 hover:text-red-400 transition-colors"><Trash2 size={12} /></button>
+                              <button onClick={(e) => startRenaming(e, p)} className="p-1.5 hover:text-blue-400 transition-colors" title="Rename"><Edit3 size={12} /></button>
+                              <button onClick={(e) => deleteProject(p.id, e)} className="p-1.5 hover:text-red-400 transition-colors" title="Delete"><Trash2 size={12} /></button>
                             </>
                           )}
                         </div>
@@ -314,7 +321,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Editor/Preview Switch */}
         <div className="flex-1 flex justify-center h-full items-center">
           <div className="flex items-center bg-slate-950/80 rounded-xl p-1 border border-slate-800 h-10 w-full max-w-[280px]">
             <button onClick={() => setActiveTab('editor')} className={`flex-1 flex items-center justify-center gap-2 h-full text-[10px] font-bold uppercase rounded-lg transition-all ${activeTab === 'editor' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
@@ -352,14 +358,13 @@ const App: React.FC = () => {
         </aside>
 
         <div className="flex-1 flex overflow-hidden">
-          {/* Chat Panel */}
           <section className={`transition-all duration-300 ease-in-out ${isZenMode ? 'w-0 opacity-0 pointer-events-none' : 'flex-[2] min-w-[320px]'} flex flex-col bg-slate-900 border-r border-slate-800 relative shadow-inner`}>
             <main className="flex-1 overflow-y-auto pb-40 scrollbar-hide">
               {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-500">
                   <Sparkles size={40} className="text-blue-500 mb-6 opacity-20 animate-pulse" />
-                  <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-2">DevMind Architect</h2>
-                  <p className="text-[11px] max-w-[200px] leading-relaxed italic">Start a project. Your work is safely stored in your browser's local storage.</p>
+                  <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-2">DevMind AI Architect</h2>
+                  <p className="text-[11px] max-w-[200px] leading-relaxed italic">Start your vision. Your files are auto-synced to persistent local storage.</p>
                 </div>
               ) : (
                 <div className="w-full">
@@ -371,7 +376,6 @@ const App: React.FC = () => {
             <ChatInput onSend={handleSend} isLoading={isLoading} />
           </section>
 
-          {/* Main Workspace (Editor/Preview) */}
           <section className="flex-[8] flex flex-col min-w-0 bg-slate-950">
             <WorkspaceEditor 
               editingFile={editingFile} 
